@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact Book</title>
+<style>
+  :root {
+    --bg: #eef2f7;
+    --panel: #ffffff;
+    --ink: #17233b;
+    --muted: #5d6b82;
+    --line: #d5dce8;
+    --accent: #1f5eff;
+    --accent-ink: #ffffff;
+    --danger: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  label { display: block; font-weight: 600; margin-bottom: 4px; }
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    font: inherit;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--ink);
+  }
+  input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .field { margin-bottom: 14px; }
+  .error { color: var(--danger); font-size: 0.9rem; min-height: 1.3em; margin: 0 0 8px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.danger { color: var(--danger); }
+  h2 { font-size: 1.1rem; margin: 32px 0 12px; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  li {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  li.editing { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(31, 94, 255, 0.15); }
+  .name { font-weight: 700; }
+  .phone { color: var(--muted); }
+  .empty { color: var(--muted); padding: 16px; border: 1px dashed var(--line); border-radius: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Contact Book</h1>
+  <p class="sub">Add a name and phone number. Everything is saved online, so you can edit or delete it later from any device.</p>
+
+  <section class="panel" aria-labelledby="form-title">
+    <div id="form-title" class="name" style="margin-bottom:12px">Add a contact</div>
+    <div class="field">
+      <label for="name">Name</label>
+      <input id="name" type="text" autocomplete="name" placeholder="e.g. Humna">
+    </div>
+    <div class="field">
+      <label for="phone">Phone number</label>
+      <input id="phone" type="tel" autocomplete="tel" placeholder="e.g. 0300 1234567">
+    </div>
+    <p id="error" class="error" role="alert"></p>
+    <div class="row">
+      <button id="save" class="primary" type="button">Save contact</button>
+      <button id="cancel" type="button" hidden>Cancel edit</button>
+    </div>
+  </section>
+
+  <h2>Saved contacts</h2>
+  <ul id="list"></ul>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+  // 1) Paste your Supabase values here (Project Settings > API)
+  const SUPABASE_URL = "https://svbkzahpymxdzbznlbav.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_5Tm6EWmGvDXy0-YqlJjYFA_RHLwzM_p";
+
+  const nameEl = document.getElementById("name");
+  const phoneEl = document.getElementById("phone");
+  const errorEl = document.getElementById("error");
+  const saveBtn = document.getElementById("save");
+  const cancelBtn = document.getElementById("cancel");
+  const titleEl = document.getElementById("form-title");
+  const listEl = document.getElementById("list");
+
+  let contacts = [];
+  let editingId = null;
+  let db = null;
+
+  const configured = SUPABASE_URL.indexOf("http") === 0 && SUPABASE_KEY.indexOf("PASTE") !== 0;
+  if (configured) {
+    db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  }
+
+  function showError(msg) { errorEl.textContent = msg || ""; }
+
+  function setBusy(busy) {
+    saveBtn.disabled = busy;
+    cancelBtn.disabled = busy;
+  }
+
+  async function loadContacts() {
+    if (!db) {
+      showError("Add your Supabase URL and key at the top of the script first.");
+      render();
+      return;
+    }
+    const res = await db.from("contacts").select("*").order("created_at", { ascending: true });
+    if (res.error) {
+      showError("Could not load contacts: " + res.error.message);
+      return;
+    }
+    contacts = res.data;
+    render();
+  }
+
+  function render() {
+    listEl.innerHTML = "";
+    if (contacts.length === 0) {
+      const p = document.createElement("li");
+      p.className = "empty";
+      p.textContent = "No contacts yet. Add your first one above.";
+      listEl.appendChild(p);
+      return;
+    }
+    contacts.forEach(function (c) {
+      const li = document.createElement("li");
+      if (c.id === editingId) li.className = "editing";
+
+      const info = document.createElement("div");
+      const n = document.createElement("div");
+      n.className = "name";
+      n.textContent = c.name;
+      const p = document.createElement("div");
+      p.className = "phone";
+      p.textContent = c.phone;
+      info.append(n, p);
+
+      const actions = document.createElement("div");
+      actions.className = "row";
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.textContent = "Edit";
+      edit.onclick = function () { startEdit(c.id); };
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "danger";
+      del.textContent = "Delete";
+      del.onclick = function () { remove(c.id); };
+      actions.append(edit, del);
+
+      li.append(info, actions);
+      listEl.appendChild(li);
+    });
+  }
+
+  function resetForm() {
+    editingId = null;
+    nameEl.value = "";
+    phoneEl.value = "";
+    showError("");
+    saveBtn.textContent = "Save contact";
+    titleEl.textContent = "Add a contact";
+    cancelBtn.hidden = true;
+  }
+
+  function startEdit(id) {
+    const c = contacts.find(function (x) { return x.id === id; });
+    if (!c) return;
+    editingId = id;
+    nameEl.value = c.name;
+    phoneEl.value = c.phone;
+    showError("");
+    saveBtn.textContent = "Save changes";
+    titleEl.textContent = "Edit contact";
+    cancelBtn.hidden = false;
+    nameEl.focus();
+    render();
+  }
+
+  async function remove(id) {
+    if (!db) return;
+    if (!confirm("Delete this contact?")) return;
+    const res = await db.from("contacts").delete().eq("id", id);
+    if (res.error) { showError("Could not delete: " + res.error.message); return; }
+    if (editingId === id) resetForm();
+    await loadContacts();
+  }
+
+  async function save() {
+    if (!db) { showError("Add your Supabase URL and key at the top of the script first."); return; }
+    const name = nameEl.value.trim();
+    const phone = phoneEl.value.trim();
+    if (!name) { showError("Enter a name."); nameEl.focus(); return; }
+    if (!/^[+\d][\d\s\-()]{6,}$/.test(phone)) {
+      showError("Enter a valid phone number (digits, spaces, + or - only).");
+      phoneEl.focus();
+      return;
+    }
+    setBusy(true);
+    let res;
+    if (editingId) {
+      res = await db.from("contacts").update({ name: name, phone: phone }).eq("id", editingId);
+    } else {
+      res = await db.from("contacts").insert({ name: name, phone: phone });
+    }
+    setBusy(false);
+    if (res.error) { showError("Could not save: " + res.error.message); return; }
+    resetForm();
+    await loadContacts();
+  }
+
+  saveBtn.addEventListener("click", save);
+  cancelBtn.addEventListener("click", function () { resetForm(); render(); });
+  [nameEl, phoneEl].forEach(function (el) {
+    el.addEventListener("keydown", function (e) { if (e.key === "Enter") save(); });
+  });
+
+  loadContacts();
+</script>
+</body>
+</html>
