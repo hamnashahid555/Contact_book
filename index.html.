@@ -45,7 +45,7 @@
   input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .field { margin-bottom: 14px; }
   .error { color: var(--danger); font-size: 0.9rem; min-height: 1.3em; margin: 0 0 8px; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   button {
     font: inherit;
     font-weight: 600;
@@ -76,40 +76,125 @@
   .name { font-weight: 700; }
   .phone { color: var(--muted); }
   .empty { color: var(--muted); padding: 16px; border: 1px dashed var(--line); border-radius: 12px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 8px; }
+  .who { color: var(--muted); font-size: 0.95rem; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tabs button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 </style>
 </head>
 <body>
 <main>
   <h1>Contact Book</h1>
-  <p class="sub">Add a name and phone number. Everything is saved online, so you can edit or delete it later from any device.</p>
+  <p class="sub">Each account only sees and edits its own contacts.</p>
 
-  <section class="panel" aria-labelledby="form-title">
-    <div id="form-title" class="name" style="margin-bottom:12px">Add a contact</div>
-    <div class="field">
-      <label for="name">Name</label>
-      <input id="name" type="text" autocomplete="name" placeholder="e.g. Humna">
+  <!-- AUTH SCREEN -->
+  <section id="auth-screen" class="panel" hidden>
+    <div class="tabs">
+      <button id="tab-login" type="button" class="active">Log in</button>
+      <button id="tab-signup" type="button">Sign up</button>
     </div>
     <div class="field">
-      <label for="phone">Phone number</label>
-      <input id="phone" type="tel" autocomplete="tel" placeholder="e.g. 0300 1234567">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" placeholder="you@example.com">
     </div>
-    <p id="error" class="error" role="alert"></p>
-    <div class="row">
-      <button id="save" class="primary" type="button">Save contact</button>
-      <button id="cancel" type="button" hidden>Cancel edit</button>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" placeholder="At least 6 characters">
     </div>
+    <p id="auth-error" class="error" role="alert"></p>
+    <button id="auth-submit" class="primary" type="button">Log in</button>
   </section>
 
-  <h2>Saved contacts</h2>
-  <ul id="list"></ul>
+  <!-- APP SCREEN -->
+  <section id="app-screen" hidden>
+    <div class="topbar">
+      <span class="who" id="who-label"></span>
+      <button id="logout" type="button">Log out</button>
+    </div>
+
+    <section class="panel" aria-labelledby="form-title">
+      <div id="form-title" class="name" style="margin-bottom:12px">Add a contact</div>
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" type="text" autocomplete="name" placeholder="e.g. Humna">
+      </div>
+      <div class="field">
+        <label for="phone">Phone number</label>
+        <input id="phone" type="tel" autocomplete="tel" placeholder="e.g. 0300 1234567">
+      </div>
+      <p id="error" class="error" role="alert"></p>
+      <div class="row">
+        <button id="save" class="primary" type="button">Save contact</button>
+        <button id="cancel" type="button" hidden>Cancel edit</button>
+      </div>
+    </section>
+
+    <h2>Saved contacts</h2>
+    <ul id="list"></ul>
+  </section>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
-  // 1) Paste your Supabase values here (Project Settings > API)
+  // Paste your Supabase values here (Project Settings > API)
   const SUPABASE_URL = "https://svbkzahpymxdzbznlbav.supabase.co";
   const SUPABASE_KEY = "sb_publishable_5Tm6EWmGvDXy0-YqlJjYFA_RHLwzM_p";
 
+  const configured = SUPABASE_URL.indexOf("http") === 0 && SUPABASE_KEY.indexOf("PASTE") !== 0;
+  const db = configured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+  // --- Auth elements ---
+  const authScreen = document.getElementById("auth-screen");
+  const appScreen = document.getElementById("app-screen");
+  const tabLogin = document.getElementById("tab-login");
+  const tabSignup = document.getElementById("tab-signup");
+  const emailEl = document.getElementById("email");
+  const passwordEl = document.getElementById("password");
+  const authErrorEl = document.getElementById("auth-error");
+  const authSubmit = document.getElementById("auth-submit");
+  const whoLabel = document.getElementById("who-label");
+  const logoutBtn = document.getElementById("logout");
+
+  let mode = "login"; // or "signup"
+
+  function setMode(next) {
+    mode = next;
+    tabLogin.className = mode === "login" ? "active" : "";
+    tabSignup.className = mode === "signup" ? "active" : "";
+    authSubmit.textContent = mode === "login" ? "Log in" : "Sign up";
+    authErrorEl.textContent = "";
+  }
+  tabLogin.addEventListener("click", function () { setMode("login"); });
+  tabSignup.addEventListener("click", function () { setMode("signup"); });
+
+  async function submitAuth() {
+    if (!db) { authErrorEl.textContent = "Add your Supabase URL and key at the top of the script first."; return; }
+    const email = emailEl.value.trim();
+    const password = passwordEl.value;
+    if (!email || !password) { authErrorEl.textContent = "Enter email and password."; return; }
+    authSubmit.disabled = true;
+    let res;
+    if (mode === "login") {
+      res = await db.auth.signInWithPassword({ email: email, password: password });
+    } else {
+      res = await db.auth.signUp({ email: email, password: password });
+    }
+    authSubmit.disabled = false;
+    if (res.error) { authErrorEl.textContent = res.error.message; return; }
+    if (mode === "signup" && !res.data.session) {
+      authErrorEl.textContent = "Account created. Check email to confirm, or log in if confirmation is disabled.";
+    }
+  }
+  authSubmit.addEventListener("click", submitAuth);
+  [emailEl, passwordEl].forEach(function (el) {
+    el.addEventListener("keydown", function (e) { if (e.key === "Enter") submitAuth(); });
+  });
+
+  logoutBtn.addEventListener("click", async function () {
+    if (db) await db.auth.signOut();
+  });
+
+  // --- Contact app elements ---
   const nameEl = document.getElementById("name");
   const phoneEl = document.getElementById("phone");
   const errorEl = document.getElementById("error");
@@ -120,31 +205,12 @@
 
   let contacts = [];
   let editingId = null;
-  let db = null;
-
-  const configured = SUPABASE_URL.indexOf("http") === 0 && SUPABASE_KEY.indexOf("PASTE") !== 0;
-  if (configured) {
-    db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  }
 
   function showError(msg) { errorEl.textContent = msg || ""; }
 
-  function setBusy(busy) {
-    saveBtn.disabled = busy;
-    cancelBtn.disabled = busy;
-  }
-
   async function loadContacts() {
-    if (!db) {
-      showError("Add your Supabase URL and key at the top of the script first.");
-      render();
-      return;
-    }
     const res = await db.from("contacts").select("*").order("created_at", { ascending: true });
-    if (res.error) {
-      showError("Could not load contacts: " + res.error.message);
-      return;
-    }
+    if (res.error) { showError("Could not load contacts: " + res.error.message); return; }
     contacts = res.data;
     render();
   }
@@ -214,7 +280,6 @@
   }
 
   async function remove(id) {
-    if (!db) return;
     if (!confirm("Delete this contact?")) return;
     const res = await db.from("contacts").delete().eq("id", id);
     if (res.error) { showError("Could not delete: " + res.error.message); return; }
@@ -223,7 +288,6 @@
   }
 
   async function save() {
-    if (!db) { showError("Add your Supabase URL and key at the top of the script first."); return; }
     const name = nameEl.value.trim();
     const phone = phoneEl.value.trim();
     if (!name) { showError("Enter a name."); nameEl.focus(); return; }
@@ -232,14 +296,14 @@
       phoneEl.focus();
       return;
     }
-    setBusy(true);
+    saveBtn.disabled = true;
     let res;
     if (editingId) {
       res = await db.from("contacts").update({ name: name, phone: phone }).eq("id", editingId);
     } else {
       res = await db.from("contacts").insert({ name: name, phone: phone });
     }
-    setBusy(false);
+    saveBtn.disabled = false;
     if (res.error) { showError("Could not save: " + res.error.message); return; }
     resetForm();
     await loadContacts();
@@ -251,7 +315,32 @@
     el.addEventListener("keydown", function (e) { if (e.key === "Enter") save(); });
   });
 
-  loadContacts();
+  // --- Auth state switch ---
+  function showAuth() {
+    authScreen.hidden = false;
+    appScreen.hidden = true;
+  }
+  function showApp(session) {
+    authScreen.hidden = true;
+    appScreen.hidden = false;
+    whoLabel.textContent = session.user.email;
+    resetForm();
+    loadContacts();
+  }
+
+  if (!db) {
+    authScreen.hidden = false;
+    authErrorEl.textContent = "Add your Supabase URL and key at the top of the script first.";
+  } else {
+    db.auth.getSession().then(function (res) {
+      if (res.data.session) showApp(res.data.session);
+      else showAuth();
+    });
+    db.auth.onAuthStateChange(function (event, session) {
+      if (session) showApp(session);
+      else showAuth();
+    });
+  }
 </script>
 </body>
 </html>
