@@ -1,5 +1,4 @@
 // Vercel serverless function (api/parse.js)
-// Make sure OPENROUTER_API_KEY is set in your Vercel Environment Variables
 
 const functionDeclarations = [
   {
@@ -64,7 +63,7 @@ export default async function handler(req, res) {
         "X-Title": "Contact Book App",
       },
       body: JSON.stringify({
-        model: "openrouter/free", // Dynamically routes to any active free model that supports tool calling
+        model: "openrouter/free",
         messages: [{ role: "user", content: text }],
         tools: functionDeclarations.map((fn) => ({ type: "function", function: fn })),
         tool_choice: "auto",
@@ -82,7 +81,15 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Could not identify action from input text." });
     }
 
+    // Return an array under the "actions" property
     return res.status(200).json({
+      actions: [
+        {
+          name: toolCall.function.name,
+          args: JSON.parse(toolCall.function.arguments),
+        }
+      ],
+      // Fallback property in case front-end checks data.action as well
       action: toolCall.function.name,
       args: JSON.parse(toolCall.function.arguments),
     });
