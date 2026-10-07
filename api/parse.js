@@ -53,8 +53,8 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "GEMINI_API_KEY environment variable is missing in Vercel environment variables" });
   }
 
-  // Updated to gemini-2.5-flash (active model on v1beta)
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  // Updated model endpoint to active gemini-3.8-flash
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
   const payload = {
     contents: [
