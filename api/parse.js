@@ -1,5 +1,5 @@
-// Serverless function using OpenRouter Free API
-// Environment Variable Required in Vercel: OPENROUTER_API_KEY
+// Vercel serverless function (api/parse.js)
+// Make sure OPENROUTER_API_KEY is set in your Vercel Environment Variables
 
 const functionDeclarations = [
   {
@@ -51,7 +51,7 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: "OPENROUTER_API_KEY is missing in Vercel Environment Variables" });
+    return res.status(500).json({ error: "OPENROUTER_API_KEY is missing in Vercel environment variables" });
   }
 
   try {
@@ -60,11 +60,11 @@ export default async function handler(req, res) {
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://vercel.com", // Optional header for OpenRouter stats
+        "HTTP-Referer": "https://contact-book-humna7.vercel.app",
         "X-Title": "Contact Book App",
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-3.3-70b-instruct:free",
+        model: "openrouter/free", // Dynamically routes to any active free model that supports tool calling
         messages: [{ role: "user", content: text }],
         tools: functionDeclarations.map((fn) => ({ type: "function", function: fn })),
         tool_choice: "auto",
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
 
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall) {
-      return res.status(400).json({ error: "Could not parse action from input text." });
+      return res.status(400).json({ error: "Could not identify action from input text." });
     }
 
     return res.status(200).json({
