@@ -38,6 +38,38 @@ const functionDeclarations = [
   },
 ];
 
+// Fallback parser if LLM returns text instead of calling a function
+function parseFallback(text) {
+  const clean = text.trim();
+  const phoneMatch = clean.match(/\d{7,15}/);
+  const phone = phoneMatch ? phoneMatch[0] : "";
+
+  if (clean.toLowerCase().startsWith("delete")) {
+    const name = clean.replace(/delete/i, "").trim();
+    if (name) return { name: "delete_contact", args: { name } };
+  }
+
+  if (clean.toLowerCase().startsWith("update")) {
+    const name = clean
+      .replace(/update/i, "")
+      .replace(phone, "")
+      .replace(/number|to|his|her|phone/gi, "")
+      .trim();
+    if (name && phone) return { name: "update_contact", args: { name, phone } };
+  }
+
+  if (clean.toLowerCase().startsWith("add") || phone) {
+    const name = clean
+      .replace(/add|user|number/gi, "")
+      .replace(phone, "")
+      .replace(/his|her|phone/gi, "")
+      .trim();
+    if (name && phone) return { name: "add_contact", args: { name, phone } };
+  }
+
+  return null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -64,9 +96,15 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "openrouter/free",
-        messages: [{ role: "user", content: text }],
+        messages: [
+          {
+            role: "system",
+            content: "You are a JSON parser. You must call one of the provided tools to handle the user's contact request."
+          },
+          { role: "user", content: text }
+        ],
         tools: functionDeclarations.map((fn) => ({ type: "function", function: fn })),
-        tool_choice: "auto",
+        tool_choice: "required", // Forces model to call a function instead of returning plain text
       }),
     });
 
@@ -77,23 +115,43 @@ export default async function handler(req, res) {
     }
 
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall) {
-      return res.status(400).json({ error: "Could not identify action from input text." });
+
+    // Case 1: AI structured tool call succeeded
+    if (toolCall) {
+      const actionObj = {
+        name: toolCall.function.name,
+        args: JSON.parse(toolCall.function.arguments),
+      };
+
+      return res.status(200).json({
+        actions: [actionObj],
+        action: actionObj.name,
+        args: actionObj.args,
+      });
     }
 
-    // Return an array under the "actions" property
-    return res.status(200).json({
-      actions: [
-        {
-          name: toolCall.function.name,
-          args: JSON.parse(toolCall.function.arguments),
-        }
-      ],
-      // Fallback property in case front-end checks data.action as well
-      action: toolCall.function.name,
-      args: JSON.parse(toolCall.function.arguments),
-    });
+    // Case 2: AI returned text instead of a tool call -> trigger local regex fallback
+    const fallback = parseFallback(text);
+    if (fallback) {
+      return res.status(200).json({
+        actions: [fallback],
+        action: fallback.name,
+        args: fallback.args,
+      });
+    }
+
+    return res.status(400).json({ error: "Could not parse contact action from prompt." });
   } catch (err) {
+    // Case 3: Network/API failure -> try local regex fallback
+    const fallback = parseFallback(text);
+    if (fallback) {
+      return res.status(200).json({
+        actions: [fallback],
+        action: fallback.name,
+        args: fallback.args,
+      });
+    }
+
     return res.status(500).json({ error: err.message || "Internal server error" });
   }
 }
