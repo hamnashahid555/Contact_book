@@ -53,7 +53,7 @@ module.exports = async (req, res) => {
       'Keep phone numbers exactly as the user typed them. ' +
       'If you cannot tell what to do, call clarify. Existing contacts: ' + list;
 
-    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
