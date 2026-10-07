@@ -1,5 +1,5 @@
 // Vercel serverless function: sends the user's sentence to Google Gemini (free tier) with tool definitions.
-// Needs env vars: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
+// Needs env vars in Vercel: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY
 
 const str = { type: "STRING" };
 
@@ -21,15 +21,14 @@ const functionDeclarations = [
   },
 ];
 
-// Helper to make API requests to Google Gemini with exponential backoff on retryable errors
+// Helper to handle retryable errors (503 High Demand / 429 Rate Limit) on Vercel
 async function callGeminiWithRetry(url, options, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
     const res = await fetch(url, options);
-    
-    // If successful, return response
+
     if (res.ok) return res;
 
-    // Handle high demand (503) or rate limits (429) by waiting and retrying
+    // Retry if Google returns 503 (high demand) or 429 (too many requests)
     if ((res.status === 503 || res.status === 429) && i < retries - 1) {
       await new Promise((resolve) => setTimeout(resolve, delay * Math.pow(2, i)));
       continue;
@@ -51,11 +50,11 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: "GEMINI_API_KEY environment variable is missing" });
+    return res.status(500).json({ error: "GEMINI_API_KEY environment variable is missing in Vercel environment variables" });
   }
 
-  // Using gemini-1.5-flash: high availability, fast, and free tier friendly
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  // Updated to gemini-2.5-flash (active model on v1beta)
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   const payload = {
     contents: [
@@ -71,7 +70,7 @@ export default async function handler(req, res) {
     ],
     toolConfig: {
       functionCallingConfig: {
-        mode: "ANY", // Forces Gemini to call one of our defined function tools
+        mode: "ANY",
         allowedFunctionNames: ["add_contact", "update_contact", "delete_contact"],
       },
     },
@@ -86,7 +85,7 @@ export default async function handler(req, res) {
         body: JSON.stringify(payload),
       },
       3,
-      1000
+      1200
     );
 
     const data = await response.json();
@@ -100,7 +99,6 @@ export default async function handler(req, res) {
       return res.status(response.status).json({ error: data.error?.message || "Failed to call Gemini API" });
     }
 
-    // Extract function call response from Gemini
     const call = data.candidates?.[0]?.content?.parts?.[0]?.functionCall;
 
     if (!call) {
